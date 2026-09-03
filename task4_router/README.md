@@ -104,8 +104,7 @@ exactly 5 of 20 win, and `test_deferred_transaction_is_not_safe` substitutes a
 plain `BEGIN` and asserts it fails. One more detail makes the second test
 possible at all — the eviction `DELETE` runs *after* the budget check. Ordering
 it first also takes the write lock, which masks the isolation level completely
-and makes the claim untestable. That was the bug in the first draft: the
-guarantee was real, but nothing proved it.
+and makes the claim untestable.
 
 `asyncio.to_thread` is the one that is easiest to skip and hardest to notice.
 SQLite calls are blocking; making them from the event loop stalls every other
@@ -163,15 +162,13 @@ timeout value. After `failure_threshold` consecutive failures the breaker opens
 and the primary is skipped entirely for `recovery_time_s`; then a single probe
 decides whether to close it.
 
-Two ways the breaker could get stuck, both found by adversarial testing rather
-than by the tests: a half-open probe that got a **4xx** never cleared
-`_probe_in_flight` (the client-error path raised before touching the breaker),
-and a **client disconnect** mid-probe re-raised `CancelledError` past it. Either
-left the breaker reporting half-open while refusing every probe, so a fully
-recovered primary was skipped for the life of the process — exactly the "fallback
-becomes the outage" failure the breaker exists to prevent. A 4xx now counts as
-provider health (the provider answered); cancellation calls `abandon_probe()`,
-which releases the slot without claiming to know anything.
+Two paths have to release the half-open probe slot without recording health,
+or the breaker wedges: a probe that gets a **4xx** (the provider answered, so it
+is healthy — the request was wrong) and a **client disconnect** mid-probe. Miss
+either and the breaker reports half-open while refusing every probe, so a fully
+recovered primary is skipped for the life of the process — exactly the "fallback
+becomes the outage" failure the breaker exists to prevent. A 4xx counts as
+provider health; cancellation calls `abandon_probe()`.
 
 `test_open_breaker_removes_the_timeout_penalty` is the one that shows the point:
 with a 200 ms deadline and a dead primary, the third request completes in under

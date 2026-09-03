@@ -117,19 +117,18 @@ deny-by-default, which is what you would run once the tool inventory is known.
 
 ### The method name needs the same treatment as the tool name
 
-An adversarial pass found the bypass this section had been describing one layer
-too low. `authorize()` gated on `method != "tools/call"` — an exact ASCII
-compare — so every lexical variant skipped the authorization branch and went
-straight to the forward path:
+The same reasoning applies one layer up, to the method name. Gating on
+`method != "tools/call"` with an exact ASCII compare lets every lexical variant
+skip the authorization branch and go straight to the forward path:
 
 ```
 Tools/Call   TOOLS/CALL   tools/Call   "tools/call "   " tools/call"
 ```
 
-A viewer's `admin_reset_key` was **delivered to the downstream**, and the audit
-log recorded it as `forwarded`, not `denied`. The shipped mock rejected those
-spellings only because its own dispatch is exact-match — which is precisely the
-downstream leniency this gateway is not allowed to depend on.
+A viewer's `admin_reset_key` would be **delivered to the downstream**, audited
+as `forwarded` rather than `denied`. The mock downstream happens to reject those
+spellings because its own dispatch is exact-match — which is precisely the
+downstream leniency this gateway must not depend on.
 
 The fix is the same two layers the tool name already had: `is_wellformed_method()`
 rejects anything outside `^[A-Za-z0-9_./-]{1,128}\Z` with `-32600`, and the
@@ -166,8 +165,7 @@ Two details in that regex:
 - **`\Z`, not `$`.** In Python's `re`, `$` also matches immediately before a
   trailing newline, so `^[a-z_]+$` happily accepts `"admin_reset_key\n"` — a
   name shaped for log forging or for a downstream that strips whitespace before
-  lookup. This was a real bug in the first draft; `test_malformed_names_rejected`
-  pins it.
+  lookup. `test_malformed_names_rejected` pins it.
 - **The *original* name is forwarded**, not the normalised one. A gateway that
   rewrites the caller's request is a gateway that will one day rewrite it wrong.
 

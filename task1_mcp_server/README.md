@@ -157,8 +157,7 @@ Two supporting details:
 | `reason` stripped before length check | Ten spaces satisfies `min_length=10` but is not a reason |
 | **`[0-9]{5}` not `\d{5}`** | `\d` is Unicode-aware. `CUST-١٠٠٤٢` (Arabic-Indic digits) passes `^CUST-\d{5}$` and then breaks every downstream ASCII-only system |
 
-That last one was a real bug in the first draft of this file — the test suite
-caught it, which is why the test is still there.
+`test_rejects_malformed_customer_id` pins the Unicode-digit case specifically.
 
 **`idempotency_key` (beyond the spec).** `trigger_refund` moves money and agents
 retry: a tool call that times out at the client but succeeded at the server gets

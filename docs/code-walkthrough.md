@@ -241,19 +241,19 @@ TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,128}\Z")   # \Z, not $
 `^[a-z_]+$` happily accepts `"admin_reset_key\n"` — a name shaped for log forging.
 That was a real bug too.
 
-### The bug an adversarial pass found
+### The same control has to cover the method name
 
-All that care went into the *tool* name. The *method* name, one line above, was
-compared exactly:
+All that care goes into the *tool* name. The *method* name, one line above, is
+easy to compare exactly and get wrong:
 
 ```python
 if method != "tools/call":     # ← Tools/Call skipped authorization entirely
     return None
 ```
 
-So `Tools/Call`, `TOOLS/CALL` and `" tools/call"` never reached the policy, and a
-viewer's `admin_reset_key` was **forwarded downstream**, audited as `forwarded`.
-Same fix, one layer up:
+`Tools/Call`, `TOOLS/CALL` and `" tools/call"` then never reach the policy at
+all, and a viewer's `admin_reset_key` is **forwarded downstream**. Same fix, one
+layer up:
 
 ```python
 if not is_wellformed_method(method):
@@ -509,8 +509,7 @@ it's an accounting one.
 
 Note the eviction `DELETE` runs *after* the check. Putting it first also takes the
 write lock, which masks the isolation level entirely and makes the claim
-untestable. That was the bug in the first draft: the guarantee was real, but
-nothing proved it.
+untestable.
 
 Every call goes through `asyncio.to_thread`, because SQLite is blocking and
 calling it from the event loop stalls every other in-flight request.
@@ -555,11 +554,10 @@ def allows_request(self, now=None) -> bool:
     return True
 ```
 
-Two ways it could wedge, both found by adversarial testing: a half-open probe
-that got a **4xx** never cleared the flag, and a **client disconnect** re-raised
-`CancelledError` past it. Either left the breaker refusing every probe forever. A
-4xx now counts as provider health (the provider answered); cancellation calls
-`abandon_probe()`, which releases the slot without claiming to know anything.
+Two paths have to release that slot without recording health, or the breaker
+wedges forever: a probe that gets a **4xx** (the provider answered, so it is
+healthy — the request was wrong) and a client disconnect mid-probe. A 4xx counts
+as provider health; cancellation calls `abandon_probe()`.
 
 ### One error envelope, one place that decides what leaks
 

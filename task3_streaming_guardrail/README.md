@@ -136,6 +136,20 @@ That cost is a function of **token pacing, not response length** — the gap doe
 not compound, as the near-identical inter-frame medians show. 3.24 MB of text
 moves through the redactor with a few KiB of peak allocation.
 
+## Pattern order is a correctness property
+
+`CREDIT_CARD` is matched *before* `SSN`, and both are fenced with
+`(?<![\d\-]) ... (?![\d\-])`. Without both, the nine-digit SSN rule matches the
+first nine digits of a card and produces `card [REDACTED]1111111` — a redaction
+that publishes seven digits of a card number. `test_complete_patterns` pins it.
+
+Relatedly, a Luhn rejection must not *consume* the span it rejected. Returning
+the span verbatim makes the scan resume at its end, so real PII the run had
+swallowed is never examined — `"Invoice 12345 4111 1111 1111 1111"` leaves the
+card untouched, because the invoice number shifts the greedy match one digit left
+and Luhn then fails. `iter_matches()` advances a single character on rejection
+instead.
+
 ## False positives are a product bug too
 
 A guardrail that redacts order numbers is a guardrail somebody turns off.
@@ -146,56 +160,6 @@ A guardrail that redacts order numbers is a guardrail somebody turns off.
 | `Order 1234567890123456` | untouched | fails Luhn |
 | `123-45-6789` | `[REDACTED]` | valid SSN shape |
 | `000-00-0000` | untouched | never-issued area number |
-
-### Bugs worth calling out
-
-The first draft ordered `SSN` before `CREDIT_CARD` in the alternation. The SSN
-rule matched the first nine digits of a card and produced:
-
-```
-card [REDACTED]1111111 ok
-```
-
-A redaction that publishes seven digits of a card number. The fix was ordering
-`CREDIT_CARD` first *and* fencing both rules with `(?<![\d\-]) … (?![\d\-])` so
-neither can match inside a longer digit run. Alternation order is a correctness
-property here, not a style choice, and `test_complete_patterns` pins it.
-
-The second one was found by review, not by the tests, which is the more useful
-story. The hold-back character classes did not contain `(` or `)` — but the phone
-pattern does. So:
-
-```python
-stream(["Call me at (555) 123-456", "7 tomorrow"])
-# -> "Call me at (555) 123-4567 tomorrow"   the whole number, in the clear
-```
-
-The `)` truncated the held tail, the match was cut in half, and neither half
-matched alone. The equivalence property test was the right test to catch it and
-did not, because its corpus only contained `555-010-1234`. Three things changed:
-the character class was widened, `pull_back_behind_straddling_match()` was added
-so the property no longer depends on getting the class right,
-`assert_holdback_covers_patterns()` now fails loudly if a new pattern introduces
-an uncovered character, and the corpus grew to nine texts across twelve chunk
-sizes. Against the old code, the new corpus fails at chunk sizes 1 through 17.
-
-The third only showed up under differential fuzzing, and it is the subtlest.
-Several patterns are fenced with `(?<![\d\-])`, and **a lookbehind at position 0
-of a truncated string sees "start of input"** — which satisfies a negative
-lookbehind even when the real preceding character was a digit or a dash. So
-redacting each safe prefix in isolation gave slightly different answers from
-redacting the whole response:
-
-```
-"-(555) 123-4567"    whole string: "-([REDACTED]"    streamed: "-[REDACTED]"
-```
-
-Both are safe — streaming redacted *more* — but "chunking never changes the
-result" is a far easier property to test and to trust than "chunking never makes
-it worse". `re`'s `finditer(string, pos)` keeps lookbehinds looking behind `pos`,
-so `redact_complete_from()` carries eight characters of already-emitted context
-into the scan. Fuzzing 6,000 generated PII-dense texts across 8 chunk sizes went
-from 2,996 divergences in 48,000 runs to **zero**.
 
 ## Transport details
 
@@ -245,157 +209,3 @@ tests/test_stream_proxy.py       23  end-to-end SSE, the non-streaming path,
                                      and upstream failure handling on both
 tests/test_streaming_latency.py   5  TTFT and progressive delivery over real sockets
 ```
-
-
-## The bugs review and fuzzing found in this file
-
-Kept here with their tests, because how they were found matters more than the
-patches.
-
-**1. `(` and `)` missing from the hold-back character class.** The phone pattern
-contains them; the tail rules did not. `"Call me at (555) 123-456"` + `"7 tomorrow"`
-streamed the whole number in the clear. The equivalence property test was exactly
-the right test and missed it, because its corpus held only a dash-separated
-number. Fixed structurally — `pull_back_behind_straddling_match()` plus
-`assert_holdback_covers_patterns()` — not just by widening the class.
-
-**2. A Luhn rejection consumed the span it rejected.** `CREDIT_CARD` matches any
-13–19 digit run; Luhn decides whether it is really a card. Returning the span
-verbatim made the scan resume at its *end*, so any real PII the run had swallowed
-was never examined:
-
-```
-"Invoice 12345 4111 1111 1111 1111 was charged."   ->  unchanged
-```
-
-The five-digit invoice number pulls the greedy match one digit left, Luhn fails,
-and the whole card is published. Roughly 70% of cards behind a short digit prefix
-leaked this way, on both the streaming and non-streaming paths. `iter_matches()`
-now advances a single character on rejection instead of consuming the span. It is
-the mirror image of bug 4 below: there one pattern ate another, here a *rejected*
-match ate a real one.
-
-**3. Both edges of the buffer lied to the regex.** A lookbehind at position 0 of a
-truncated string sees "start of input", satisfying `(?<![\d\-])`; end-of-string
-likewise satisfies the trailing `(?![\d\-])` fence. The left edge made streaming
-redact slightly *more* than a whole-string pass. The right edge was worse:
-
-```
-"Card 9039 3080 7022 682 " + "8"*140
-```
-
-Cut inside the run of eights, the greedy match becomes 16 digits, fails Luhn, and
-the real card is emitted in the clear. `redact_range()` now scans the complete
-buffer and emits only `[start, end)`, so the match found is always the one the
-whole-string pass finds. A related case needed `LOOKBEHIND_CONTEXT` raised from 8
-to `MAX_MATCH`: the straddle guard has to see matches that *begin* before the
-buffer, not merely evaluate a lookbehind.
-
-**4. `SSN` ordered before `CREDIT_CARD`.** The SSN rule matched the first nine
-digits of a card and produced `card [REDACTED]1111111` — a redaction publishing
-seven digits. Fixed by ordering and by fencing both rules with digit lookarounds.
-
-After all four: a differential fuzz of 3,600 adversarial texts (every PII type
-glued with digit prefixes, 400-character digit runs, over-length emails and bare
-punctuation) across 6 chunk sizes — **21,600 streamings, 0 divergences from
-whole-string redaction, 0 leaks, peak buffer 492 against a bound of 800.**
-
-
----
-
-## Round two: what a dedicated attack pass found
-
-After the four bugs above were fixed, an adversarial pass was run specifically
-against this module. It found five more. They are worth reading in order,
-because the first is the most instructive bug in the whole project.
-
-### 1. The straddle guard and the emitter disagreed, and that was a leak
-
-`feed()` ran two scans over the same buffer **from different origins**:
-
-```python
-pull_back_behind_straddling_match(whole, split, offset)   # iter_matches(whole, 0)
-redact_range(whole, offset, split)                        # iter_matches(whole, offset)
-```
-
-`whole` is truncated at `LOOKBEHIND_CONTEXT`, so the guard's scan could begin
-mid-value and segment an ambiguous chain of adjacent matches **out of phase**
-with the emitter's. When they disagreed, the guard saw a clean boundary at the
-split and declined to pull back; the emitter then found a match spanning it, hit
-its `break`, and emitted that match's **head in the clear** — after which
-`self._buffer = self._buffer[safe_len:]` discarded it, so it was never redacted.
-
-The trigger is adjacent PII whose concatenation is itself a valid match,
-sustained past ~820 characters:
-
-| input | leaked verbatim |
-| --- | --- |
-| `"123-45-6789 " * 150` | 41 SSNs |
-| `"ada@example.com" * 150` | 96 emails |
-| `"4111 1111 1111 11114111 1111 1111 1111 " * 33` | 24 card numbers |
-
-Confirmed end-to-end through `redact_sse_stream`: a client rendered 82 SSNs in
-the clear that `redact_complete` masks. It did **not** fire on realistic varied
-values with ordinary separators — 0 hits in 226 such trials — which is exactly
-why the earlier fuzzing missed it.
-
-The fix is one line and the reasoning is the whole point: **two scans of the same
-text from the same origin cannot disagree.** The guard now scans from `offset`
-too, and `feed()` computes the match list once and hands it to both.
-
-### 2. Six ways a provider frame could abort the stream
-
-`last_frame` was assigned before any shape validation, and `_with_content` did
-`frame["choices"][0]`. Each of these killed the response mid-stream:
-
-| frame | error |
-| --- | --- |
-| `{"choices": [], "usage": {...}}` with a held-back tail | `IndexError` |
-| no `choices` key | `KeyError: 'choices'` |
-| `choices` as a dict | `KeyError: 0` |
-| `choices[0]` a string | `ValueError` |
-| `choices: []` and no `[DONE]` | `IndexError` |
-| any content frame after `[DONE]` | `RuntimeError: feed() after flush()` |
-
-The first is not exotic. It is OpenAI's `stream_options={"include_usage": true}`
-terminator.
-
-### 3. Two redaction bypasses in the frame layer
-
-Only `choices[0]` was inspected, so a frame whose first choice was a role delta
-forwarded `choices[1]` **unredacted** — and the non-streaming path redacts every
-choice, so the two paths disagreed about the same policy. Separately, non-`str`
-`delta.content` (a structured content-block list, or a number) was passed through
-verbatim. Both now go through the redactor or have the field dropped; unexamined
-content is never forwarded.
-
-### 4. The memory statistic could not observe a peak
-
-`stats.max_buffer` was recorded *after* trimming. A single 1 MB delta reported
-`max_buffer = 19` while a million characters were resident. Fixed, and the claim
-corrected with it: memory is O(1) in **response** length, not in **chunk** size —
-a chunk has to be appended before it can be examined. Real SSE deltas are a few
-characters.
-
-### 5. CPU amplification on adversarial input
-
-`"1 "` repeated is the worst case: every digit is preceded by a space, so every
-position is a valid card start and every candidate needs a Luhn check. 10 KB at
-chunk=1 took **13.2 s**, driving 930,000 Luhn calls — the entire profile.
-
-Two changes, no semantic effect:
-
-```
-              before    after
-chunk=1      13.165s   1.256s
-chunk=4       3.274s   0.324s
-chunk=64      0.237s   0.022s
-```
-
-`feed()` scans once and shares the match list with the guard, and `_is_card` /
-`luhn_ok` are memoised because the sliding buffer re-examines the same spans
-repeatedly. Cost is linear in length, not superlinear, both before and after.
-`test_adversarial_input_does_not_blow_up_cpu` guards it.
-
-**After all five:** 24,549 streamings across the adversarial corpus and the exact
-leak family — 0 divergences, 0 leaks.

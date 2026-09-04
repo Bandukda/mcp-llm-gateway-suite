@@ -20,7 +20,13 @@ def test_guarded_server_keeps_stdout_pure():
 
 
 def test_unguarded_server_corrupts_stdout():
-    """The guard is load-bearing: without it the same server fails this check."""
+    """The guard is load-bearing: without it the same server corrupts the stream.
+
+    This asserts a *successful* run, because the unguarded script's job is to
+    detect corruption and it exits 0 when it finds it. If it ever came back
+    clean, the guard would have stopped mattering and that is the failure worth
+    catching.
+    """
     proc = subprocess.run(
         [sys.executable, "verify_stdout_purity.py", "--unguarded"],
         cwd=ROOT,
@@ -28,5 +34,6 @@ def test_unguarded_server_corrupts_stdout():
         text=True,
         timeout=90,
     )
-    assert proc.returncode == 1
-    assert "reached stdout" in proc.stdout
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "corrupts the stream, as expected" in proc.stdout
+    assert "spoofed" in proc.stdout

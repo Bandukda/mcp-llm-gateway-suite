@@ -16,8 +16,8 @@ pip install -r ../requirements.txt
 
 python server.py                  # speaks JSON-RPC 2.0 on stdin/stdout
 python -m pytest tests -q         # 58 tests
-python verify_stdout_purity.py    # PASS - proves stdout carries only JSON-RPC
-python verify_stdout_purity.py --unguarded   # FAIL, deliberately - see below
+python verify_stdout_purity.py    # proves stdout carries only JSON-RPC
+python verify_stdout_purity.py --unguarded   # proves the guard is load-bearing
 ```
 
 To wire it into Claude Desktop or any MCP client:
@@ -87,10 +87,15 @@ PASS
   malformed arguments returned JSON-RPC error -32602
 
 $ python verify_stdout_purity.py --unguarded
-FAIL
-  - line 1 is not JSON: 'DEBUG: about to serve requests'
-  - line 4 ... {"jsonrpc": "2.0", "id": 999, "result": {"spoofed": true}}
+PASS - the unguarded server corrupts the stream, as expected
+  9 stdout lines, of which 4 are not protocol
+  including a forged response a client would have accepted:
+      {"jsonrpc": "2.0", "id": 999, "result": {"spoofed": true}}
 ```
+
+Both invocations pass. The second one asserts the *opposite* property: strip the
+guard and the stream must break. It fails only if the unguarded server somehow
+stays clean, which would mean the guard had stopped being load-bearing.
 
 That last line is the point of the exercise. A stray `print` of a JSON-shaped
 string is not noise; it is a **forged response** the client will believe.
@@ -181,5 +186,5 @@ about a specific request, or it is a promise about nothing.
 ```
 tests/test_schemas.py        39  every malformed-input path, field by field
 tests/test_protocol.py       17  end-to-end through a real MCP ClientSession
-tests/test_stdout_purity.py   2  guarded passes, unguarded fails
+tests/test_stdout_purity.py   2  clean with the guard, corrupt without it
 ```

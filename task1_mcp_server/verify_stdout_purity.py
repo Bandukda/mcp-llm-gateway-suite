@@ -18,10 +18,15 @@ misbehave in the four ways real servers break in production:
 If ``stdio_guard.reserve_stdout_for_protocol()`` were removed, this script fails
 on the first of those. With it, all four land on stderr and stdout stays clean.
 
+Both invocations PASS in a healthy repo. The ``--unguarded`` run removes the
+guard and checks that the stream *does* get corrupted, because that is what
+makes the guarded result mean something. It fails only if the unguarded server
+somehow stays clean, which would mean the guard is not load-bearing.
+
 Usage::
 
-    python verify_stdout_purity.py            # guarded (expected: PASS)
-    python verify_stdout_purity.py --unguarded  # shows the failure it prevents
+    python verify_stdout_purity.py              # PASS: stream stays clean
+    python verify_stdout_purity.py --unguarded  # PASS: stream corrupts, as it must
 """
 
 from __future__ import annotations
@@ -151,7 +156,7 @@ def run_server(guarded: bool, expected_ids: set[int]) -> tuple[str, str]:
     return "".join(stdout_lines), "".join(stderr_chunks)
 
 
-def check(stdout: str, stderr: str) -> int:
+def check(stdout: str, stderr: str, guarded: bool = True) -> int:
     lines = [line for line in stdout.splitlines() if line.strip()]
     failures: list[str] = []
     responses: dict[int, dict] = {}
@@ -198,6 +203,30 @@ def check(stdout: str, stderr: str) -> int:
         failures.append(f"expected -32602, got {responses[5]['error']['code']}")
 
     print()
+
+    if not guarded:
+        # Without the guard the stream is expected to be corrupt, so finding
+        # corruption is this run's success condition, not its failure. Reporting
+        # it as "FAIL" made an otherwise green test run look broken.
+        if failures:
+            print("PASS - the unguarded server corrupts the stream, as expected")
+            print(f"  {len(lines)} stdout lines, of which {len(lines) - 5} are not protocol")
+            print(f"  all {len(CHAOS_MARKERS)} stray writes reached stdout instead of stderr")
+            print("  including a forged response a client would have accepted:")
+            for line in lines:
+                if '"spoofed"' in line:
+                    print(f"      {line.strip()[:120]}")
+            print()
+            print("  This is what the guard prevents. Run without --unguarded to")
+            print("  see the same server keep the stream clean.")
+            return 0
+
+        print("FAIL - the unguarded server kept stdout clean")
+        print("  The guard is supposed to be load-bearing. If the server behaves")
+        print("  correctly without it, either chaos mode is not running or the")
+        print("  protection has moved somewhere this check cannot see.")
+        return 1
+
     if failures:
         print("FAIL")
         for failure in failures:
@@ -216,8 +245,8 @@ def check(stdout: str, stderr: str) -> int:
 
 if __name__ == "__main__":
     guarded = "--unguarded" not in sys.argv
-    mode = "guarded" if guarded else "UNGUARDED (demonstration of the failure)"
+    mode = "guarded" if guarded else "UNGUARDED (showing what the guard prevents)"
     print(f"Running billing-mcp in chaos mode, {mode}\n")
     expected = {m["id"] for m in REQUESTS if "id" in m}
     out, err = run_server(guarded, expected)
-    sys.exit(check(out, err))
+    sys.exit(check(out, err, guarded))

@@ -68,14 +68,19 @@ guard rather than asserting it:
 
 ```bash
 cd task1_mcp_server
-python verify_stdout_purity.py              # PASS
-python verify_stdout_purity.py --unguarded  # FAIL, and that is the point
+python verify_stdout_purity.py              # the stream stays clean
+python verify_stdout_purity.py --unguarded  # the same server without the guard
 ```
 
-> **The second command is meant to fail.** It runs the same server with the
-> guard switched off, so you can see what it prevents. `run_all_tests.sh` runs
-> both, so you will see one `FAIL` in an otherwise green run. The final line,
-> `ALL CHECKS PASSED`, is the verdict.
+Both pass. The second removes the guard and checks that the stream *does* get
+corrupted, which is what makes the first result mean anything:
+
+```
+PASS - the unguarded server corrupts the stream, as expected
+  9 stdout lines, of which 4 are not protocol
+  including a forged response a client would have accepted:
+      {"jsonrpc": "2.0", "id": 999, "result": {"spoofed": true}}
+```
 
 **The streaming guardrail does not buffer the response.** Redacting a finished
 string is easy; doing it to a stream without holding the whole thing in memory is

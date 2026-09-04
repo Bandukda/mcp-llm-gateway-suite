@@ -14,6 +14,11 @@ included, so there are no API keys to set and nothing to sign up for.
 
 ## Getting started
 
+**Requires Python 3.10 or newer**, because the MCP SDK does not publish builds
+for anything older. `python3 --version` will tell you. If yours is older, install
+a newer one (`brew install python@3.12`) and point the setup script at it with
+`PYTHON=python3.12 ./setup.sh`.
+
 ```bash
 ./setup.sh                  # creates a venv and installs dependencies
 source .venv/bin/activate
@@ -85,7 +90,7 @@ a buffering proxy would:   210.0 ms
 
 ## Requirements
 
-Python 3.10+. The MCP SDK is pinned to `>=1.9,<2`; see `requirements.txt`.
+Python 3.10 or newer. The MCP SDK is pinned to `>=1.9,<2`; see `requirements.txt`.
 
 ## Layout
 

@@ -68,9 +68,14 @@ guard rather than asserting it:
 
 ```bash
 cd task1_mcp_server
-python verify_stdout_purity.py              # runs the server misbehaving on purpose
-python verify_stdout_purity.py --unguarded  # shows the failure it prevents
+python verify_stdout_purity.py              # PASS
+python verify_stdout_purity.py --unguarded  # FAIL, and that is the point
 ```
+
+> **The second command is meant to fail.** It runs the same server with the
+> guard switched off, so you can see what it prevents. `run_all_tests.sh` runs
+> both, so you will see one `FAIL` in an otherwise green run. The final line,
+> `ALL CHECKS PASSED`, is the verdict.
 
 **The streaming guardrail does not buffer the response.** Redacting a finished
 string is easy; doing it to a stream without holding the whole thing in memory is

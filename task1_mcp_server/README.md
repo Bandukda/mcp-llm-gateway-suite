@@ -16,8 +16,8 @@ pip install -r ../requirements.txt
 
 python server.py                  # speaks JSON-RPC 2.0 on stdin/stdout
 python -m pytest tests -q         # 58 tests
-python verify_stdout_purity.py    # black-box proof stdout is clean
-python verify_stdout_purity.py --unguarded   # shows the bug it prevents
+python verify_stdout_purity.py    # PASS - proves stdout carries only JSON-RPC
+python verify_stdout_purity.py --unguarded   # FAIL, deliberately - see below
 ```
 
 To wire it into Claude Desktop or any MCP client:

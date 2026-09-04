@@ -3,7 +3,21 @@
 set -uo pipefail
 
 cd "$(dirname "$0")"
-PYTHON="${PYTHON:-python}"
+# Prefer the venv ./setup.sh built, so this works whether or not it was
+# activated first. An absolute path is required: the checks below run inside
+# ( cd task1_mcp_server && ... ) subshells, where a relative one would not
+# resolve. Falls back to python3 -- never bare `python`, which macOS has not
+# shipped since Catalina.
+if [ -z "${PYTHON:-}" ] && [ -x "$PWD/.venv/bin/python" ]; then
+    PYTHON="$PWD/.venv/bin/python"
+fi
+PYTHON="${PYTHON:-python3}"
+
+if ! "$PYTHON" -c "import pytest, mcp" 2>/dev/null; then
+    echo "ERROR: $PYTHON cannot import pytest and mcp." >&2
+    echo "       Run ./setup.sh first, then re-run this script." >&2
+    exit 1
+fi
 status=0
 
 echo "=============================================================="

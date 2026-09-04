@@ -12,18 +12,16 @@ halves of an agent's life, each with a gateway in front of it.
           │                         │                         │
           ▼                         ▼                         ▼
  ┌─────────────────┐     ┌────────────────────┐    ┌────────────────────┐
- │  MCP GATEWAY    │     │  LLM GATEWAY            │    │  TASK 4            │
  │  MCP gateway    │     │  LLM gateway       │    │  Model router      │
- │                 │     │  streaming         │    │  limits + fallback │
- │  authn + authz  │     │  guardrail         │    │                    │
- └────────┬────────┘     └─────────┬──────────┘    └─────────┬──────────┘
-          │                        │                          │
-          ▼                        ▼                          ▼
+ │                 │     │  streaming         │    │                    │
+ │  authn + authz  │     │  guardrail         │    │  limits + fallback │
+ └────────┬────────┘     └──────────┬─────────┘    └──────────┬─────────┘
+          │                         │                         │
+          ▼                         ▼                         ▼
  ┌─────────────────┐     ┌────────────────────┐    ┌────────────────────┐
- │  MCP SERVER     │     │  model provider    │    │  primary provider  │
- │  MCP server     │     │  (SSE)             │    │  secondary         │
- │  tools + data   │     └────────────────────┘    └────────────────────┘
- └─────────────────┘
+ │  MCP server     │     │  model provider    │    │  primary provider  │
+ │  tools + data   │     │  (SSE)             │    │  secondary         │
+ └─────────────────┘     └────────────────────┘    └────────────────────┘
 ```
 
 Read left to right, it is the two halves of an agent's life: **what it can do**
@@ -79,7 +77,7 @@ grep.
 
 ## What is deliberately not built
 
-Worth naming before they ask.
+Worth naming explicitly.
 
 - **No token verification.** The gateway's token table is a stand-in with a
   constant-time lookup. Production is JWT + JWKS or RFC 7662 introspection —
@@ -88,15 +86,14 @@ Worth naming before they ask.
   per-process. Both are correct for one node and both have a stated Redis path.
 - **No tool-description scanning.** An MCP server's *descriptions* are prompt
   injection surface — a malicious server can put instructions in the text the
-  model reads. A real gateway scans them. Out of scope here, and worth
-  mentioning as the next thing you would add.
+  model reads. A real gateway scans them. Out of scope here, and the most
+  obvious next addition.
 - **No output-side tool-result inspection.** The MCP gateway inspects requests. A tool
   *result* can also carry PII or injected instructions; the natural fix is to run
   the redactor over the MCP gateway's responses, which is why they share a shape.
 
-That last point is the good answer to "how would you extend this?" — the two
-gateways compose. the `StreamRedactor` drops into the MCP gateway's response path
-essentially unchanged.
+That last point is where the two gateways compose: the `StreamRedactor` drops
+into the MCP gateway's response path essentially unchanged.
 
 ---
 

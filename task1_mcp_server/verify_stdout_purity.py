@@ -2,10 +2,10 @@
 """
 Proof that stdout carries nothing but JSON-RPC.
 
-This is the check the task's first scoring criterion asks for, run as a real
-black-box test: spawn ``server.py`` as a subprocess with pipes, hold a genuine
-MCP conversation over stdin/stdout, and assert that *every* byte that came back
-on stdout is a well-formed JSON-RPC 2.0 message.
+Stdout isolation, proved as a black-box test rather than asserted: spawn
+``server.py`` as a subprocess with pipes, hold a genuine MCP conversation over
+stdin/stdout, and check that *every* byte that came back on stdout is a
+well-formed JSON-RPC 2.0 message.
 
 The server is launched with ``BILLING_MCP_CHAOS=1``, which makes it deliberately
 misbehave in the four ways real servers break in production:

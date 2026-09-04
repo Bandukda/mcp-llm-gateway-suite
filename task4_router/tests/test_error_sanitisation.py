@@ -1,4 +1,4 @@
-"""The scoring criterion: no raw upstream detail reaches the client.
+"""The property: no raw upstream detail reaches the client.
 
 Every test here asserts a *negative* -- that something is absent from the
 response body. Negatives are the only useful shape for this property: a leak is

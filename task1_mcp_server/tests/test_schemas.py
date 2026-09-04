@@ -1,4 +1,4 @@
-"""Schema-level tests: every malformed-input path the reviewer will poke at."""
+"""Schema-level tests: every malformed-input path, field by field."""
 
 import pytest
 from pydantic import ValidationError

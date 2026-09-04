@@ -210,7 +210,7 @@ async def test_refund_for_suspended_customer_is_a_tool_error(session):
 
 
 async def test_idempotency_key_reuse_with_different_arguments_is_refused(session, store):
-    """The bug an adversarial pass found: a key was a promise about nothing.
+    """An idempotency key bound to nothing is a promise about nothing.
 
     Reusing a key with different arguments returned the *original* refund and
     reported ok/replayed. So a call asking to refund CUST-20099 $5 was answered

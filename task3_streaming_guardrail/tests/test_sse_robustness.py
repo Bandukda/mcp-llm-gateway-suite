@@ -1,8 +1,8 @@
 """Frames the provider sends that this code did not design for.
 
-Every case here either crashed the response mid-stream or forwarded PII
-unredacted before an adversarial pass found it. The first one is not exotic: it
-is OpenAI's `stream_options={"include_usage": true}` terminator.
+Every case here would either crash the response mid-stream or forward PII
+unredacted if the frame shape were taken on trust. The first one is not exotic:
+it is OpenAI's `stream_options={"include_usage": true}` terminator.
 """
 
 import asyncio

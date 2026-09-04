@@ -425,7 +425,7 @@ async def test_batch_tools_list_is_filtered_when_filtering_is_enabled(gateway_fa
 
 
 # ---------------------------------------------------------------------------
-# Method-name evasion — an adversarial pass found this one
+# Method-name evasion
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
     "method", ["Tools/Call", "TOOLS/CALL", "tools/Call", "ToOlS/cAlL"]

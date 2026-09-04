@@ -1,7 +1,7 @@
 # Pinned deliberately. The MCP SDK's v2 line moved from decorator-based handler
 # registration to constructor-based, and now diverts fd 1 inside stdio_server()
-# itself. Task 1 targets the 1.x API, which is what the published docs and most
-# reviewers know, and implements the stdout guard explicitly.
+# itself. The MCP server here targets the 1.x API, which is what the published
+# docs describe, and implements the stdout guard explicitly.
 mcp>=1.9,<2
 pydantic>=2.7
 

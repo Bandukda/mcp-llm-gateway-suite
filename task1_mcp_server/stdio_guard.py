@@ -43,6 +43,13 @@ __all__ = ["reserve_stdout_for_protocol", "configure_stderr_logging"]
 
 _ALREADY_RESERVED = False
 
+# Both streams below live for the life of the process, so the module keeps a
+# reference to each. Without it the diverted sys.stdout is collectable the moment
+# anything replaces sys.stdout -- which is exactly what pytest's capture plugin
+# does after every test -- and its finaliser raises ResourceWarning for a file
+# that was never meant to be closed in the first place.
+_RETAINED: list[io.TextIOWrapper] = []
+
 
 def reserve_stdout_for_protocol() -> io.TextIOWrapper:
     """Divert fd 1 to stderr and return the private stream that owns the wire.
@@ -85,12 +92,14 @@ def reserve_stdout_for_protocol() -> io.TextIOWrapper:
     # 3. Rebuild sys.stdout on the diverted descriptor with line buffering, so
     #    interleaved debug output stays readable next to stderr logging.
     try:
-        sys.stdout = io.TextIOWrapper(
+        diverted = io.TextIOWrapper(
             os.fdopen(os.dup(1), "wb", buffering=0),
             encoding="utf-8",
             errors="replace",
             line_buffering=True,
         )
+        _RETAINED.append(diverted)
+        sys.stdout = diverted
     except OSError:  # pragma: no cover - exotic environments
         sys.stdout = sys.stderr
 
@@ -101,12 +110,14 @@ def reserve_stdout_for_protocol() -> io.TextIOWrapper:
 
     # buffering=0 + write_through: the transport writes one JSON frame then
     # flushes; no partial frame may ever sit in a buffer if the process dies.
-    return io.TextIOWrapper(
+    wire = io.TextIOWrapper(
         os.fdopen(wire_fd, "wb", buffering=0),
         encoding="utf-8",
         newline="\n",
         write_through=True,
     )
+    _RETAINED.append(wire)
+    return wire
 
 
 def configure_stderr_logging(level: int = logging.INFO, name: str = "mcp-billing") -> logging.Logger:

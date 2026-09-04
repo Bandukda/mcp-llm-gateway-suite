@@ -1,5 +1,7 @@
 # MCP and LLM gateway suite
 
+[![tests](https://github.com/Bandukda/mcp-llm-gateway-suite/actions/workflows/tests.yml/badge.svg)](https://github.com/Bandukda/mcp-llm-gateway-suite/actions/workflows/tests.yml)
+
 Four small services for the path between an AI agent and the systems it talks to.
 
 | | Service | What it does |
@@ -90,6 +92,9 @@ the actual problem:
 cd task3_streaming_guardrail && python benchmark.py
 ```
 
+One run on a laptop. The millisecond figures move a few ms run to run; the
+ratio between them is the part that holds.
+
 ```
 TTFT direct from mock  :    43.5 ms
 TTFT through gateway   :    84.5 ms
@@ -97,6 +102,10 @@ a buffering proxy would:   210.0 ms
 
 3.24 MB streamed, 4.9 KiB peak allocation
 ```
+
+The added cost is roughly one inter-delta gap, and it does not compound with
+response length — `benchmark.py` prints the inter-frame medians alongside, which
+stay level.
 
 ## Requirements
 
